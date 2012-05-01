@@ -9,7 +9,6 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -20,7 +19,6 @@ import junit.framework.AssertionFailedError;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugin.testing.AbstractMojoTestCase;
-import org.codehaus.plexus.util.FileUtils;
 import org.codehaus.plexus.util.IOUtil;
 import org.junit.After;
 import org.junit.Before;
@@ -49,7 +47,6 @@ public class JSLintMojoTest extends AbstractMojoTestCase {
     private File baseDir;
     private JSLintMojo mojo;
     private final FakeLog logger = new FakeLog();
-    private File outputDir;
 
     private void assertLogContains(String expected) {
         for (FakeLog.LogItem item : logger.loggedItems) {
@@ -67,7 +64,7 @@ public class JSLintMojoTest extends AbstractMojoTestCase {
      * @return the expected file, for further inspection.
      */
     private File assertFileExists(String filename) {
-        File expectedFile = new File(outputDir, filename);
+        File expectedFile = new File(temp.getRoot(), filename);
         assertTrue(expectedFile + " exists", expectedFile.exists());
         assertTrue("file has non-zero length", expectedFile.length() > 0);
         return expectedFile;
@@ -109,18 +106,13 @@ public class JSLintMojoTest extends AbstractMojoTestCase {
     @Override
     public void setUp() throws Exception {
         super.setUp();
-        // we make a copy of the test folder so we can manipulate it if needed
-        File tempSourceFolder = temp.newFolder();
-        File sourceFolder = getResourceFile(POM_XML).getParentFile();
-        FileUtils.copyDirectoryStructure(sourceFolder, tempSourceFolder);
-        File pom = new File(tempSourceFolder,"pom.xml");
-        baseDir = tempSourceFolder;
+        File pom = getResourceFile(POM_XML);
+        baseDir = pom.getParentFile();
         mojo = (JSLintMojo) lookupMojo(GOAL, pom);
         mojo.setLog(logger);
         // We don't care about "use strict" for these tests.
         mojo.addOption(Option.SLOPPY, "true");
-        outputDir = temp.newFolder();
-        mojo.setOutputFolder(outputDir);
+        mojo.setOutputFolder(temp.getRoot());
     }
 
     @After
@@ -198,7 +190,7 @@ public class JSLintMojoTest extends AbstractMojoTestCase {
 
     @Test
     public void testLogToFileMakesDirectory() throws Exception {
-        assertTrue(outputDir.delete());
+        assertTrue(temp.getRoot().delete());
         testLogToFile();
     }
 
@@ -229,41 +221,6 @@ public class JSLintMojoTest extends AbstractMojoTestCase {
         assertEquals("true", options.get("sloppy"));
     }
 
-    // check we are generating the timestamp file when requested
-    @Test
-    public void testTimestampReportFile() throws Exception {
-    	useGoodSource();
-    	mojo.execute();   	
-    	File timestamps = assertFileExists("timestamps.txt");
-      	 Matcher m = Pattern.compile("\\.js \\d+").matcher(readFile(timestamps));
-    	 assertTrue("Found first timestamp", m.find()); 
-    	 assertTrue("Found second timestamp", m.find());
-    	 assertFalse("Found no more timestamps", m.find());
-    }
-    
-    // test touching files alters which files we deal with
-    @Test
-    public void testTimestampSkipping() throws Exception {
-    	useGoodSource();
-    	mojo.execute();   	
-    	assertFileExists("timestamps.txt");
-     	
-     	// should do nothing on second run and report files should have nothing on them
-    	mojo.execute();
-    	File xmlReport = assertFileExists("jslint.xml");
-    	String xmlReportContent = readFile(xmlReport);
-    	assertEquals("second run should not report anything", xmlReportContent, "<jslint></jslint>");
-    	
-    	// third run, touching one file
-    	Thread.sleep(1001);
-    	FileUtils.fileAppend(new File(baseDir,GOOD_JS+"/good.js").getPath(), "\n//comment\n");
-//    	new File(baseDir,GOOD_JS+"/good.js").setLastModified(new Date().getTime());
-    	mojo.execute();
-    	xmlReport = assertFileExists("jslint.xml");
-    	xmlReportContent = readFile(xmlReport);
-    	assertTrue("third run contains good.js", xmlReportContent.contains("good.js"));
-   }
-    
     private void useBadSource() {
         mojo.setSourceFolders(Arrays.asList(baseRelative(BAD_JS)));
     }
